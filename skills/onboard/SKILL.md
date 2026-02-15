@@ -1,9 +1,7 @@
 ---
 name: onboard
 description: Generate an architecture overview and onboarding guide using tree-sitter codebase mapping and code smell detection
-disable-model-invocation: true
-context: fork
-agent: Explore
+allowed-tools: [Read, Write, Edit, Glob, Grep, "Bash(python3:*)", "Bash(git log:*)"]
 ---
 
 # Onboard — Codebase Architecture & Smell Analysis
