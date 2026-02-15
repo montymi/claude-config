@@ -56,6 +56,15 @@ else
     echo "  pip install -r $SCRIPT_DIR/requirements.txt"
 fi
 
+# --- Verify tree-sitter installation ---
+
+if python3 -c "import tree_sitter" 2>/dev/null; then
+    echo "  tree-sitter core: OK"
+else
+    echo "Warning: tree-sitter not importable. The /onboard skill requires it."
+    echo "  Try: pip3 install -r $SCRIPT_DIR/requirements.txt"
+fi
+
 # --- Summary ---
 
 echo ""
