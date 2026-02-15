@@ -1,12 +1,25 @@
 ---
 name: commit
 description: Stage and commit changes with conventional commit messages, with branch safety and auto-generated messages
-allowed-tools: [Glob, Grep, Read, "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git branch:*)", "Bash(git checkout:*)", "Bash(git switch:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git rev-parse:*)", "Bash(git stash:*)"]
+allowed-tools: [Glob, Grep, Read, "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git branch:*)", "Bash(git checkout:*)", "Bash(git switch:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git commit --amend:*)", "Bash(git rev-parse:*)", "Bash(git stash:*)"]
 ---
 
 # Commit — Conventional Commits with Branch Safety
 
 You are staging and committing changes in a git repository using conventional commit conventions.
+
+## Arguments
+
+`$ARGUMENTS` may contain any combination of:
+
+| Flag | Effect |
+|------|--------|
+| `--amend` | Amend the previous commit instead of creating a new one |
+| `--fixes #N` | Link commit to issue N with `Fixes #N` footer |
+| `--closes #N` | Link commit to issue N with `Closes #N` footer |
+| `--quick` | Skip confirmation prompt — auto-detect and commit immediately |
+| `--wip` | Create a `wip: <description>` commit with no body required |
+| *(plain text)* | Used as the commit message description |
 
 ## Step 1: Pre-flight Checks
 
@@ -44,6 +57,19 @@ Run these commands to understand the full picture:
 
 If diffs are large, read key changed files to understand the nature of the changes.
 
+### Breaking Change Detection
+
+Scan the diff for signals that this is a breaking change:
+
+- **Removed or renamed** public functions, classes, or exported symbols
+- **Changed function signatures** (added required params, changed return types)
+- **Deleted files** that other modules import
+- **Renamed environment variables** or config keys
+
+If breaking changes are detected:
+1. Add `!` after the type/scope in the commit subject: `feat(api)!: rename auth endpoint`
+2. Add a `BREAKING CHANGE:` footer describing what changed and migration steps
+
 ## Step 5: Safety Scan
 
 Check for sensitive files in the changeset. **Warn and exclude** any of these:
@@ -70,7 +96,12 @@ If any are found:
 
 ## Step 7: Determine Commit Message
 
-### If `$ARGUMENTS` is provided:
+### If `--wip` flag is present:
+- Use `wip: <brief description of current state>` as the commit message
+- No body required, skip type detection
+- Skip commit message validation rules (length/mood checks)
+
+### If `$ARGUMENTS` contains a message:
 - If it's already in conventional commit format (e.g., `fix: resolve null pointer`), use it as-is.
 - If it's a plain description (e.g., `fix the login bug`), convert it to conventional format.
 
@@ -90,6 +121,16 @@ Auto-detect the commit type from the diff:
 | `ci` | CI/CD config files (`.github/workflows`, Jenkinsfile, etc.) |
 | `build` | Build scripts, Dockerfile, Makefile changes |
 
+### Issue linking
+If `--fixes #N` or `--closes #N` was passed in `$ARGUMENTS`, append the corresponding footer:
+```
+Fixes #123
+```
+or
+```
+Closes #456
+```
+
 ### Message format:
 ```
 <type>(<optional-scope>): <imperative-description>
@@ -98,11 +139,40 @@ Auto-detect the commit type from the diff:
 - Use **imperative mood** ("add", "fix", "update" — not "added", "fixes", "updated")
 - **Lowercase** first word after the colon
 - **No period** at the end
-- Keep the subject line **under 50 characters**
+- Keep the subject line **under 72 characters**
 - Add a **body** (separated by blank line) for non-trivial changes explaining *why*, not *what*
+
+### Commit Message Validation
+Before committing, verify the message passes these checks:
+1. Subject line is under 72 characters
+2. No trailing period on the subject
+3. First word after the colon is lowercase
+4. Uses imperative mood (not past tense like "added", "fixed", "updated")
+5. Has a valid conventional commit type prefix
+
+If any check fails, fix the message before proceeding.
+
+## Step 7.5: Amend Mode (`--amend`)
+
+If `--amend` was passed in `$ARGUMENTS`:
+
+1. Run `git log --oneline -1` to show the commit being amended
+2. Run `git log -1 --format=%P` to check parent count — **refuse to amend merge commits**
+3. Run `git log -1 --format=%H` and `git branch -r --contains HEAD` to check if the commit has been pushed — **warn the user** if it has, as amending will require a force push
+4. Show the user the current commit message and the proposed changes
+5. Use `git commit --amend` instead of `git commit` in Step 8
+6. If the user wants to change the message, use `git commit --amend -m "new message"`. Otherwise use `git commit --amend --no-edit` to keep the existing message.
 
 ## Step 8: Confirm and Commit
 
+### If `--quick` flag is present:
+- Skip the confirmation prompt
+- Auto-detect the type, generate the message, stage, and commit immediately
+- Still enforce safety scans (Step 5) and branch protection (Step 2)
+- Still validate the commit message (Step 7)
+- Show the post-commit summary (Step 9)
+
+### Standard flow:
 Present a summary to the user:
 
 ```
@@ -122,6 +192,8 @@ Files:
   <type>(<scope>): <description>
 
   <optional body>
+
+  <optional footers>
   EOF
   )"
   ```
@@ -138,6 +210,27 @@ Files:     <count> changed
 ```
 
 Then suggest: "Run `git push` to push your changes." — but **do not execute `git push`**.
+
+## Step 10: Multi-commit Workflow
+
+When the user requests splitting changes into multiple commits (e.g., "commit these separately", "split into logical commits"):
+
+1. **Group files by change type** — separate features from fixes from refactors from docs
+2. **Present the proposed grouping** to the user:
+   ```
+   Commit 1 (feat): path/to/new-feature.ts, path/to/component.tsx
+   Commit 2 (fix):  path/to/bugfix.ts
+   Commit 3 (docs): README.md
+   ```
+3. Let the user adjust groupings before proceeding
+4. **Execute sequentially** — stage and commit each group one at a time
+5. **Show combined summary** at the end:
+   ```
+   Created 3 commits:
+     abc1234 feat(ui): add user profile component
+     def5678 fix(api): handle null response in auth
+     ghi9012 docs: update API reference
+   ```
 
 ## Edge Cases
 

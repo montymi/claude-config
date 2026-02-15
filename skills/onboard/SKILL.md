@@ -8,11 +8,33 @@ allowed-tools: [Read, Write, Edit, Glob, Grep, "Bash(python3:*)", "Bash(git log:
 
 You are generating an onboarding guide for a codebase. A tree-sitter structural map and code smell report have been injected below.
 
+## Arguments
+
+`$ARGUMENTS` may contain any combination of:
+
+| Flag | Effect |
+|------|--------|
+| `--skip-smells TYPE,TYPE` | Exclude specific smell types (e.g. `MISSING_DOCSTRING,LARGE_FILE`) |
+| `--long-func N` | Override lines threshold for LONG_FUNCTION (default: 50) |
+| `--god-class N` | Override methods threshold for GOD_CLASS (default: 15) |
+| `--deep-nesting N` | Override nesting threshold for DEEP_NESTING (default: 4) |
+| `--many-params N` | Override parameters threshold for MANY_PARAMS (default: 5) |
+| `--large-file N` | Override lines threshold for LARGE_FILE (default: 500) |
+| `--skip-dirs dir,dir` | Additional directories to ignore (e.g. `generated,vendor`) |
+
+If `$ARGUMENTS` is empty, all defaults apply.
+
 ## Injected Data
 
 ```
-!`python3 ~/.claude/skills/onboard/scripts/treemap.py`
+!`python3 ~/.claude/skills/onboard/scripts/treemap.py $ARGUMENTS`
 ```
+
+## Error Handling
+
+- **If treemap.py fails**: Fall back to manual analysis — use Glob and Grep to survey the codebase structure, then produce the onboarding document from those results. Note in the output that tree-sitter analysis was unavailable.
+- **Skipped languages**: If the output shows warnings about unavailable parsers, note which languages were skipped and recommend installing the missing `tree-sitter-*` packages.
+- **Large codebases (>5000 files)**: If the scan is slow or produces excessive output, suggest re-running with `--skip-smells MISSING_DOCSTRING --skip-dirs test,tests,vendor` to reduce noise.
 
 ## Your Task
 
@@ -79,6 +101,10 @@ After generating the onboarding document, **persist the key findings** to Claude
 #### Always:
 - Keep MEMORY.md under 200 lines (it gets loaded into the system prompt)
 - Use topic files for detailed content, link from MEMORY.md
+
+## Composability
+
+After onboarding, suggest the user run `/readme` to generate or update the project's README with the architecture context now available in project memory.
 
 ## Formatting Rules
 - Use markdown headers and bullet points
