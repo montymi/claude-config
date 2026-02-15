@@ -9,11 +9,11 @@
 <div align="center">
   <h1>claude-config</h1>
   <p>Personal Claude Code skills and configuration, version-controlled and portable across machines.</p>
-  <a href="https://github.com/mmontanaro/claude-config"><strong>Explore the docs</strong></a>
+  <a href="https://github.com/montymi/claude-config"><strong>Explore the docs</strong></a>
   &middot;
-  <a href="https://github.com/mmontanaro/claude-config/issues/new?labels=bug">Report Bug</a>
+  <a href="https://github.com/montymi/claude-config/issues/new?labels=bug">Report Bug</a>
   &middot;
-  <a href="https://github.com/mmontanaro/claude-config/issues/new?labels=enhancement">Request Feature</a>
+  <a href="https://github.com/montymi/claude-config/issues/new?labels=enhancement">Request Feature</a>
 </div>
 
 <!-- Table of Contents -->
@@ -59,7 +59,7 @@ The `/onboard` skill uses [tree-sitter](https://tree-sitter.github.io/tree-sitte
 ### Installation
 
 ```bash
-git clone https://github.com/mmontanaro/claude-config.git ~/Projects/claude-config
+git clone https://github.com/montymi/claude-config.git ~/Projects/claude-config
 cd ~/Projects/claude-config
 chmod +x install.sh
 ./install.sh
@@ -163,7 +163,7 @@ No license specified yet. See the [Tasks](#tasks) section.
 
 Michael Montanaro
 
-Project Link: [https://github.com/mmontanaro/claude-config](https://github.com/mmontanaro/claude-config)
+Project Link: [https://github.com/montymi/claude-config](https://github.com/montymi/claude-config)
 
 ## Acknowledgments
 
@@ -174,17 +174,17 @@ Project Link: [https://github.com/mmontanaro/claude-config](https://github.com/m
 ---
 
 <!-- Reference-style links -->
-[contributors-shield]: https://img.shields.io/github/contributors/mmontanaro/claude-config.svg?style=flat
-[contributors-url]: https://github.com/mmontanaro/claude-config/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/mmontanaro/claude-config.svg?style=flat
-[forks-url]: https://github.com/mmontanaro/claude-config/network/members
-[stars-shield]: https://img.shields.io/github/stars/mmontanaro/claude-config.svg?style=flat
-[stars-url]: https://github.com/mmontanaro/claude-config/stargazers
-[issues-shield]: https://img.shields.io/github/issues/mmontanaro/claude-config.svg?style=flat
-[issues-url]: https://github.com/mmontanaro/claude-config/issues
+[contributors-shield]: https://img.shields.io/github/contributors/montymi/claude-config.svg?style=flat
+[contributors-url]: https://github.com/montymi/claude-config/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/montymi/claude-config.svg?style=flat
+[forks-url]: https://github.com/montymi/claude-config/network/members
+[stars-shield]: https://img.shields.io/github/stars/montymi/claude-config.svg?style=flat
+[stars-url]: https://github.com/montymi/claude-config/stargazers
+[issues-shield]: https://img.shields.io/github/issues/montymi/claude-config.svg?style=flat
+[issues-url]: https://github.com/montymi/claude-config/issues
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-blue.svg?style=flat&logo=linkedin
 <!-- TODO: Replace with your LinkedIn username -->
-[linkedin-url]: https://linkedin.com/in/mmontanaro
+[linkedin-url]: https://linkedin.com/in/michael-montanaro
 [python-shield]: https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white
 [python-url]: https://python.org
 [bash-shield]: https://img.shields.io/badge/Bash-4EAA25?style=flat&logo=gnubash&logoColor=white
