@@ -186,6 +186,7 @@ Files:
 ```
 
 - Wait for the user to approve, edit the message, or cancel.
+- **Never** append a `Co-Authored-By` or `Co-authored-by` trailer to the commit message.
 - Execute the commit using a heredoc for proper formatting:
   ```
   git commit -m "$(cat <<'EOF'

@@ -9,3 +9,4 @@ tree-sitter-ruby
 tree-sitter-c
 tree-sitter-cpp
 tree-sitter-kotlin
+tree-sitter-markdown
