@@ -19,7 +19,7 @@ mkdir -p "$SKILLS_DIR"
 
 # --- Symlink each skill ---
 
-SKILLS=("onboard" "readme" "commit" "review" "test")
+SKILLS=("onboard" "readme" "commit" "review" "test" "aap")
 LINKED=()
 
 for skill in "${SKILLS[@]}"; do
@@ -61,7 +61,7 @@ fi
 if python3 -c "import tree_sitter" 2>/dev/null; then
     echo "  tree-sitter core: OK"
 else
-    echo "Warning: tree-sitter not importable. The /onboard skill requires it."
+    echo "Warning: tree-sitter not importable. The /onboard and /aap skills require it."
     echo "  Try: pip3 install -r $SCRIPT_DIR/requirements.txt"
 fi
 
