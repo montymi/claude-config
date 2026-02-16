@@ -27,7 +27,6 @@
     <li><a href="#structure">Structure</a></li>
     <li><a href="#tasks">Tasks</a></li>
     <li><a href="#contributing">Contributing</a></li>
-    <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
     <li><a href="#acknowledgments">Acknowledgments</a></li>
   </ol>
@@ -37,11 +36,11 @@
 
 ## About The Project
 
-claude-config is a version-controlled collection of custom [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills and configuration. It provides portable, reusable slash commands that extend Claude Code with project-specific workflows like codebase onboarding and README generation.
+claude-config is a version-controlled collection of custom [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills and configuration. It provides portable, reusable slash commands that extend Claude Code with project-specific workflows — from codebase onboarding and README generation to conventional commits, code review, test scaffolding, and document analysis.
 
 The goal is to keep Claude Code customizations in a single repository that can be cloned onto any machine, symlinked into `~/.claude/skills/`, and immediately available in every Claude Code session. Skills are self-contained directories with a `SKILL.md` definition file and optional supporting scripts — adding a new one is as simple as dropping a directory and re-running the installer.
 
-The `/onboard` skill uses [tree-sitter](https://tree-sitter.github.io/tree-sitter/) to parse source code across 8 languages, extract structural maps (classes, functions, imports), and detect code smells like god classes, deep nesting, and circular imports. The `/readme` skill auto-detects project metadata and generates documentation following a consistent ClearDocs template.
+Two skills are **script-backed** and use [tree-sitter](https://tree-sitter.github.io/tree-sitter/) for structural analysis: `/onboard` parses source code across 11 languages to extract architecture maps and detect code smells, while `/aap` parses Agent Action Plan documents for structural review. The remaining four skills — `/readme`, `/commit`, `/review`, and `/test` — are **prompt-only**, relying on Claude Code's built-in tools for their workflows.
 
 ## Built With
 
@@ -67,7 +66,8 @@ chmod +x install.sh
 
 The installer will:
 1. Symlink each skill directory into `~/.claude/skills/`
-2. Install Python dependencies (tree-sitter grammars) via pip
+2. Install Python dependencies (tree-sitter + 11 language grammars) via pip
+3. Verify tree-sitter is importable
 
 ### Updating
 
@@ -83,25 +83,39 @@ Since skills are symlinked, pulling updates is usually enough. Re-run `install.s
 
 ### Available Skills
 
-| Skill | Command | Description |
-|-------|---------|-------------|
-| Onboard | `/onboard` | Runs tree-sitter analysis on the current project, generates an architecture overview, code smell report, and saves findings to Claude's project memory |
-| README | `/readme` | Auto-detects project metadata and generates/updates a README.md following ClearDocs styling (shields.io badges, structured sections, reference-style links) |
+| Skill | Command | Type | Description |
+|-------|---------|------|-------------|
+| Onboard | `/onboard` | Script-backed | Runs tree-sitter analysis on the current project, generates an architecture overview and code smell report, saves findings to project memory |
+| AAP | `/aap <file>` | Script-backed | Parses Agent Action Plan documents for structure validation, consistency checks, and LoC estimation |
+| README | `/readme` | Prompt-only | Auto-detects project metadata and generates/updates a README.md following ClearDocs styling |
+| Commit | `/commit` | Prompt-only | Stages and commits changes with conventional commit messages, branch safety checks, and sensitive file detection |
+| Review | `/review` | Prompt-only | Reviews code changes for bugs, security vulnerabilities, performance issues, and style drift |
+| Test | `/test` | Prompt-only | Generates and runs tests for specified files, auto-detecting the project's test framework and conventions |
 
-### How `/onboard` Works
+### Skill Details
 
-1. Claude executes `treemap.py` against the current project directory
-2. The script walks the filesystem, parses source files with tree-sitter, and extracts classes, functions, imports, and interfaces
-3. It detects code smells: god classes (>15 methods), long functions (>50 lines), deep nesting (>4 levels), too many parameters (>5), catch-all exceptions, circular imports, and large files (>500 lines)
-4. Claude receives the structural map and smell report, then generates a comprehensive onboarding document
-5. Key findings are persisted to Claude's project memory for future sessions
+**`/onboard`** — Codebase architecture and smell analysis
+- Supports: `--skip-smells TYPE,TYPE`, `--long-func N`, `--god-class N`, `--deep-nesting N`, `--many-params N`, `--large-file N`, `--skip-dirs dir,dir`
+- Languages: Python, JavaScript, TypeScript, TSX, Rust, Go, Java, Ruby, C, C++, Kotlin
 
-### How `/readme` Works
+**`/aap <file>`** — Agent Action Plan reviewer
+- Supports: `--loc-create N`, `--loc-modify N`, `--verbose`, `--focus AREA`
+- Focus areas: `frontend`, `backend`, `rules`, `scope`, `deps`, `integration`
 
-1. Claude checks for onboard memory to use as context
-2. It auto-detects project metadata: name, description, tech stack, license, author, and installation method
-3. If a README exists, custom content is preserved and integrated
-4. A ClearDocs-styled README is generated with shields.io badges and reference-style links
+**`/readme`** — ClearDocs README generator
+- Supports: `--minimal`, `--internal`, `--library`, `--no-badges`
+
+**`/commit`** — Conventional commit helper
+- Supports: `--amend`, `--quick`, `--wip`, `--fixes #N`, `--closes #N`
+- Detects breaking changes, scans for sensitive files, enforces branch safety
+
+**`/review`** — Multi-category code review
+- Supports: `--pr N`, `--staged`, `--security`, `--base <branch>`
+- Categories: correctness, security, performance, edge cases, style, test coverage
+
+**`/test`** — Framework-aware test generator
+- Supports: `--framework <name>`, `--update`, `--run`, `--coverage`
+- Auto-detects: pytest, Jest, Vitest, Go testing, Cargo, Mocha, RSpec, PHPUnit
 
 ### Adding a New Skill
 
@@ -119,30 +133,38 @@ Since skills are symlinked, pulling updates is usually enough. Re-run `install.s
 ```
 claude-config/
 ├── install.sh                 # Symlink installer + pip dependency setup
-├── requirements.txt           # Python deps (tree-sitter + 7 language grammars)
+├── requirements.txt           # Python deps (tree-sitter + 11 language grammars)
 ├── README.md                  # This file
 └── skills/
     ├── onboard/               # /onboard — codebase architecture & smell analysis
     │   ├── SKILL.md           # Skill definition (YAML frontmatter + prompt)
     │   └── scripts/
     │       └── treemap.py     # Tree-sitter structural mapper + smell detector
-    └── readme/                # /readme — ClearDocs README generator
-        └── SKILL.md           # Skill definition (prompt-only, no scripts)
+    ├── aap/                   # /aap — Agent Action Plan reviewer
+    │   ├── SKILL.md           # Skill definition
+    │   └── scripts/
+    │       └── aap_parser.py  # Tree-sitter AAP document parser
+    ├── readme/                # /readme — ClearDocs README generator
+    │   └── SKILL.md           # Skill definition (prompt-only)
+    ├── commit/                # /commit — conventional commit helper
+    │   └── SKILL.md           # Skill definition (prompt-only)
+    ├── review/                # /review — multi-category code review
+    │   └── SKILL.md           # Skill definition (prompt-only)
+    └── test/                  # /test — framework-aware test generator
+        └── SKILL.md           # Skill definition (prompt-only)
 ```
 
 ### Key Files
 
 - **`install.sh`** — Bash installer that symlinks skill directories into `~/.claude/skills/` and installs Python dependencies. Edit the `SKILLS` array to register new skills.
-- **`skills/onboard/SKILL.md`** — Skill definition for `/onboard`; invokes `treemap.py` via embedded command (`` `!python3 ...` ``) and instructs Claude to generate an architecture overview.
-- **`skills/onboard/scripts/treemap.py`** — Tree-sitter codebase mapper supporting Python, JavaScript, TypeScript, Rust, Go, Java, and Ruby. Core class: `CodebaseMapper`. Detects god classes, long functions, deep nesting, catch-all exceptions, circular imports, and more.
-- **`skills/readme/SKILL.md`** — Skill definition for `/readme`; auto-detects project metadata and generates a ClearDocs-styled README with shields.io badges and reference-style links.
+- **`skills/onboard/scripts/treemap.py`** — Tree-sitter codebase mapper supporting 11 languages. Core class: `CodebaseMapper`. Uses visitor pattern for AST traversal and smell detection.
+- **`skills/aap/scripts/aap_parser.py`** — Tree-sitter markdown parser for AAP documents. Core class: `AAPParser`. Extracts headings, tables, rules, and scope items for structural review.
 
 ## Tasks
 
 - [ ] Add a LICENSE file
-- [ ] Set up a git remote (`origin`)
-- [ ] Add unit tests for `treemap.py` smell detection logic
-- [ ] Consider adding more skills (e.g., `/review`, `/changelog`)
+- [ ] Add unit tests for `treemap.py` and `aap_parser.py`
+- [ ] Extract shared visitor pattern infrastructure into a common module
 
 ## Contributing
 
@@ -153,11 +175,6 @@ Contributions make the open source community an amazing place to learn, inspire,
 3. Commit your Changes (`git commit -m 'Add amazing feature'`)
 4. Push to the Branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
-
-## License
-
-<!-- TODO: Add a LICENSE file to the repository -->
-No license specified yet. See the [Tasks](#tasks) section.
 
 ## Contact
 
@@ -183,7 +200,6 @@ Project Link: [https://github.com/montymi/claude-config](https://github.com/mont
 [issues-shield]: https://img.shields.io/github/issues/montymi/claude-config.svg?style=flat
 [issues-url]: https://github.com/montymi/claude-config/issues
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-blue.svg?style=flat&logo=linkedin
-<!-- TODO: Replace with your LinkedIn username -->
 [linkedin-url]: https://linkedin.com/in/michael-montanaro
 [python-shield]: https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white
 [python-url]: https://python.org
