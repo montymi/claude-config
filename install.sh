@@ -19,7 +19,7 @@ mkdir -p "$SKILLS_DIR"
 
 # --- Symlink each skill ---
 
-SKILLS=("onboard" "readme" "commit" "review" "test" "aap")
+SKILLS=("onboard" "readme" "commit" "review" "test" "aap" "dev-doc" "z")
 LINKED=()
 
 for skill in "${SKILLS[@]}"; do
