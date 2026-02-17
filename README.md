@@ -40,7 +40,12 @@ claude-config is a version-controlled collection of custom [Claude Code](https:/
 
 The goal is to keep Claude Code customizations in a single repository that can be cloned onto any machine, symlinked into `~/.claude/skills/`, and immediately available in every Claude Code session. Skills are self-contained directories with a `SKILL.md` definition file and optional supporting scripts — adding a new one is as simple as dropping a directory and re-running the installer.
 
-Two skills are **script-backed** and use [tree-sitter](https://tree-sitter.github.io/tree-sitter/) for structural analysis: `/onboard` parses source code across 11 languages to extract architecture maps and detect code smells, while `/aap` parses Agent Action Plan documents for structural review. The remaining four skills — `/readme`, `/commit`, `/review`, and `/test` — are **prompt-only**, relying on Claude Code's built-in tools for their workflows.
+Three skills are **script-backed** and use [tree-sitter](https://tree-sitter.github.io/tree-sitter/) for structural analysis:
+- `/onboard` parses source code across 11 languages to extract architecture maps and detect code smells
+- `/aap` parses Agent Action Plan documents for structural review and LoC estimation
+- `/tech-spec` parses Technical Specification documents for completeness and consistency review
+
+The remaining seven skills — `/readme`, `/commit`, `/lint`, `/test`, `/dev-doc`, `/z` — are **prompt-only**, relying on Claude Code's built-in tools for their workflows.
 
 ## Built With
 
@@ -66,7 +71,7 @@ chmod +x install.sh
 
 The installer will:
 1. Symlink each skill directory into `~/.claude/skills/`
-2. Install Python dependencies (tree-sitter + 11 language grammars) via pip
+2. Install Python dependencies (tree-sitter + 12 language grammars) via pip
 3. Verify tree-sitter is importable
 
 ### Updating
@@ -81,41 +86,58 @@ Since skills are symlinked, pulling updates is usually enough. Re-run `install.s
 
 ## Usage
 
-### Available Skills
+### Available Skills (10)
 
 | Skill | Command | Type | Description |
 |-------|---------|------|-------------|
-| Onboard | `/onboard` | Script-backed | Runs tree-sitter analysis on the current project, generates an architecture overview and code smell report, saves findings to project memory |
-| AAP | `/aap <file>` | Script-backed | Parses Agent Action Plan documents for structure validation, consistency checks, and LoC estimation |
-| README | `/readme` | Prompt-only | Auto-detects project metadata and generates/updates a README.md following ClearDocs styling |
-| Commit | `/commit` | Prompt-only | Stages and commits changes with conventional commit messages, branch safety checks, and sensitive file detection |
-| Review | `/review` | Prompt-only | Reviews code changes for bugs, security vulnerabilities, performance issues, and style drift |
-| Test | `/test` | Prompt-only | Generates and runs tests for specified files, auto-detecting the project's test framework and conventions |
+| Onboard | `/onboard` | Script-backed | Runs tree-sitter analysis on the current project, generates architecture overview and code smell report |
+| AAP | `/aap <file>` | Script-backed | Parses Agent Action Plan documents for structure validation, consistency checks, LoC estimation |
+| Tech Spec | `/tech-spec <file>` | Script-backed | Parses Technical Specifications for completeness, architecture consistency, risk assessment |
+| README | `/readme` | Prompt-only | Auto-detects project metadata and generates/updates README.md following ClearDocs styling |
+| Commit | `/commit` | Prompt-only | Stages and commits with conventional commit messages, branch safety, sensitive file detection |
+| Lint | `/lint` | Prompt-only | Reviews code changes for bugs, security vulnerabilities, performance issues, style drift |
+| Test | `/test` | Prompt-only | Generates and runs tests for specified files, auto-detecting test framework and conventions |
+| Dev Doc | `/dev-doc` | Prompt-only | Cleans and standardizes Mintlify documentation pages to match Blitzy docs conventions |
+| Z | `/z` | Prompt-only | Generates structured Blitzy prompts through category-adaptive requirements gathering |
 
-### Skill Details
+### Skill Flags
 
 **`/onboard`** — Codebase architecture and smell analysis
-- Supports: `--skip-smells TYPE,TYPE`, `--long-func N`, `--god-class N`, `--deep-nesting N`, `--many-params N`, `--large-file N`, `--skip-dirs dir,dir`
-- Languages: Python, JavaScript, TypeScript, TSX, Rust, Go, Java, Ruby, C, C++, Kotlin
+- `--skip-smells TYPE,TYPE` — Exclude specific smell types
+- `--long-func N` — Override lines threshold (default: 50)
+- `--skip-dirs dir,dir` — Additional directories to ignore
 
 **`/aap <file>`** — Agent Action Plan reviewer
-- Supports: `--loc-create N`, `--loc-modify N`, `--verbose`, `--focus AREA`
-- Focus areas: `frontend`, `backend`, `rules`, `scope`, `deps`, `integration`
+- `--loc-create N`, `--loc-modify N` — Override LoC estimates
+- `--verbose` — Include full heading dump
+- `--focus AREA` — Focus on: `frontend`, `backend`, `rules`, `scope`, `deps`, `integration`
+
+**`/tech-spec <file>`** — Technical Specification reviewer
+- `--verbose` — Include full section dump
+- `--focus AREA` — Focus on: `requirements`, `architecture`, `technology`, `scope`, `integration`, `infrastructure`
 
 **`/readme`** — ClearDocs README generator
-- Supports: `--minimal`, `--internal`, `--library`, `--no-badges`
+- `--minimal` — Name, description, install, usage only
+- `--internal` — Omit Contributing, Contact, License
+- `--library` — Add API Reference and Changelog sections
 
 **`/commit`** — Conventional commit helper
-- Supports: `--amend`, `--quick`, `--wip`, `--fixes #N`, `--closes #N`
-- Detects breaking changes, scans for sensitive files, enforces branch safety
+- `--amend` — Amend previous commit
+- `--quick` — Skip confirmation, auto-commit
+- `--wip` — Create work-in-progress commit
+- `--fixes #N`, `--closes #N` — Link to issue
 
-**`/review`** — Multi-category code review
-- Supports: `--pr N`, `--staged`, `--security`, `--base <branch>`
-- Categories: correctness, security, performance, edge cases, style, test coverage
+**`/lint`** — Multi-category code review
+- `--pr N` — Review a GitHub PR by number
+- `--staged` — Only review staged changes
+- `--security` — Deep security-focused review
+- `--base <branch>` — Compare against specific branch
 
 **`/test`** — Framework-aware test generator
-- Supports: `--framework <name>`, `--update`, `--run`, `--coverage`
-- Auto-detects: pytest, Jest, Vitest, Go testing, Cargo, Mocha, RSpec, PHPUnit
+- `--framework <name>` — Override auto-detection
+- `--update` — Update existing tests
+- `--run` — Run tests after generation
+- `--coverage` — Include coverage reporting
 
 ### Adding a New Skill
 
@@ -133,38 +155,47 @@ Since skills are symlinked, pulling updates is usually enough. Re-run `install.s
 ```
 claude-config/
 ├── install.sh                 # Symlink installer + pip dependency setup
-├── requirements.txt           # Python deps (tree-sitter + 11 language grammars)
+├── requirements.txt           # Python deps (tree-sitter + 12 language grammars)
 ├── README.md                  # This file
 └── skills/
     ├── onboard/               # /onboard — codebase architecture & smell analysis
-    │   ├── SKILL.md           # Skill definition (YAML frontmatter + prompt)
+    │   ├── SKILL.md
     │   └── scripts/
     │       └── treemap.py     # Tree-sitter structural mapper + smell detector
     ├── aap/                   # /aap — Agent Action Plan reviewer
-    │   ├── SKILL.md           # Skill definition
+    │   ├── SKILL.md
     │   └── scripts/
     │       └── aap_parser.py  # Tree-sitter AAP document parser
+    ├── tech-spec/             # /tech-spec — Technical Specification reviewer
+    │   ├── SKILL.md
+    │   └── scripts/
+    │       └── tech_spec_parser.py  # Tree-sitter tech spec parser
     ├── readme/                # /readme — ClearDocs README generator
-    │   └── SKILL.md           # Skill definition (prompt-only)
+    │   └── SKILL.md
     ├── commit/                # /commit — conventional commit helper
-    │   └── SKILL.md           # Skill definition (prompt-only)
-    ├── review/                # /review — multi-category code review
-    │   └── SKILL.md           # Skill definition (prompt-only)
-    └── test/                  # /test — framework-aware test generator
-        └── SKILL.md           # Skill definition (prompt-only)
+    │   └── SKILL.md
+    ├── lint/                  # /lint — multi-category code review
+    │   └── SKILL.md
+    ├── test/                  # /test — framework-aware test generator
+    │   └── SKILL.md
+    ├── dev-doc/               # /dev-doc — Mintlify docs standardization
+    │   └── SKILL.md
+    └── z/                     # /z — Blitzy prompt generator
+        └── SKILL.md
 ```
 
 ### Key Files
 
 - **`install.sh`** — Bash installer that symlinks skill directories into `~/.claude/skills/` and installs Python dependencies. Edit the `SKILLS` array to register new skills.
-- **`skills/onboard/scripts/treemap.py`** — Tree-sitter codebase mapper supporting 11 languages. Core class: `CodebaseMapper`. Uses visitor pattern for AST traversal and smell detection.
-- **`skills/aap/scripts/aap_parser.py`** — Tree-sitter markdown parser for AAP documents. Core class: `AAPParser`. Extracts headings, tables, rules, and scope items for structural review.
+- **`skills/onboard/scripts/treemap.py`** — Tree-sitter codebase mapper supporting 11 languages. Uses visitor pattern for AST traversal and smell detection.
+- **`skills/aap/scripts/aap_parser.py`** — Tree-sitter markdown parser for AAP documents. Extracts headings, tables, rules, and scope items.
+- **`skills/tech-spec/scripts/tech_spec_parser.py`** — Tree-sitter markdown parser for Technical Specifications. Extracts features, components, technologies, and integration points.
 
 ## Tasks
 
 - [ ] Add a LICENSE file
-- [ ] Add unit tests for `treemap.py` and `aap_parser.py`
-- [ ] Extract shared visitor pattern infrastructure into a common module
+- [ ] Add unit tests for parser scripts
+- [ ] Extract shared visitor pattern infrastructure into `skills/shared/markdown_parser.py`
 
 ## Contributing
 

@@ -1,10 +1,10 @@
 ---
-name: review
+name: lint
 description: Review code changes for bugs, security vulnerabilities, performance issues, and style drift
 allowed-tools: [Read, Glob, Grep, "Bash(git diff:*)", "Bash(git status:*)", "Bash(git log:*)", "Bash(git rev-parse:*)", "Bash(git branch:*)", "Bash(git show:*)", "Bash(gh pr view:*)", "Bash(gh pr diff:*)"]
 ---
 
-# Code Review — Multi-Category Change Analysis
+# Lint — Multi-Category Change Analysis
 
 You are reviewing code changes in a git repository for correctness, security, performance, and style.
 
