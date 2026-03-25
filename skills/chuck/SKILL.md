@@ -18,6 +18,25 @@ allowed-tools: [Read, Glob, Grep]
 
 **Operational Philosophy:** This is quality assurance, not rule enforcement. Detected violations trigger chain-of-thought evaluation to determine actual applicability to the specific project context.
 
+## Blitzy Platform Context
+
+**What Blitzy is:** AI-native software development platform orchestrating 3,000+ specialized agents for autonomous code generation.
+
+**Execution environment:** Isolated Linux environments with configured toolchains, databases, package managers, and QEMU/system emulation capability.
+
+**Scale:** Up to 3M lines per run, processes codebases up to 100M lines, 8-12 hours of System 2 reasoning per generation.
+
+**Workflow stages:** Ingestion → Tech Spec → AAP (Agent Action Plan) → Code Generation (with runtime validation) → PR Review → Refine PR.
+
+**Key terminology:** AAP, Tech Spec, Project Guide, Refine PR, CRITICAL Directive, Boosters, .blitzyignore, Minimal Change Clause.
+
+**Runtime validation:** Agents compile and test generated code in isolated environments before creating PRs.
+
+**Environment config:** Natural language setup instructions, explicit toolchain versions, Variables vs Secrets (secrets encrypted, never sent to AI).
+
+**Implication for validation:** When assessing feasibility of prompt directives, account for Blitzy's Linux execution environment, multi-agent orchestration, and 8-12 hour reasoning window. Do not flag directives as infeasible when they require system-level operations (compilation, emulation, package installation) that Blitzy's environment supports.
+
+
 ## Arguments
 
 `$ARGUMENTS` contains the prompt text to validate. The entire prompt should be provided as input.
@@ -153,6 +172,7 @@ PROJECT_CONTEXT_FACTORS:
 - agent_capabilities: [What the executing agent can autonomously handle]
 - delivery_timeline: [Multi-day vs immediate execution]
 - existing_system_context: [Available specifications, codebase, documentation]
+- blitzy_environment: [Linux execution, toolchain access, runtime validation, 8-12h reasoning]
 
 APPLICABILITY_ANALYSIS:
 Does this issue create:
@@ -165,6 +185,7 @@ CONTEXTUAL_MITIGATIONS_PRESENT:
 - agent_autonomy_handles: [Can agent resolve through judgment?]
 - system_context_provides: [Does existing context fill gap?]
 - domain_standards_define: [Do conventions eliminate ambiguity?]
+- blitzy_platform_handles: [Can Blitzy's Linux environment and multi-agent orchestration resolve this?]
 
 CONCLUSION:
 FLAG: [yes/no]
@@ -196,6 +217,15 @@ RATIONALE: [Explain why this is/isn't problematic for THIS project]
 **Reasoning:** Agent integrating with third-party API. No retry logic specified. External service failures unhandled. System context shows no existing error handling framework. Creates production reliability risk.
 
 **Conclusion:** FLAG - validation gap creates material risk
+
+#### Example 4: Systems Programming Context
+
+**Detected:** Directive requires iterative kernel compilation cycle with QEMU boot validation
+
+**Reasoning:** Blitzy executes in isolated Linux environments with full toolchain access including cross-compilers, QEMU system emulation, and make/gcc toolchains. 8-12 hours of reasoning enables iterative compile-diagnose-fix cycles. Multi-agent orchestration can parallelize subsystem compilation. This is within Blitzy's operational capabilities.
+
+**Conclusion:** DO NOT FLAG — Blitzy's execution environment supports system-level operations including compilation, linking, and emulation.
+
 
 ---
 
@@ -389,7 +419,7 @@ Consider making the API faster - perhaps we could aim for under 200ms?
 - Multi-component architecture
 - New system design or major refactor
 - Limited existing context
-- Extended execution timeline (multi-day)
+- Extended execution timeline (Blitzy runs 8-12 hours of System 2 reasoning per generation)
 - Complex integration requirements
 
 **Threshold Adjustments:**
@@ -722,6 +752,7 @@ TESTING REQUIREMENTS:
 - **Existing Project (No New Dependencies):** Build instructions often unnecessary
 - **New Dependencies:** Explicit specification critical
 - **Environment Configuration:** Required for features needing external services
+- **Blitzy Environment:** Agents execute in configurable Linux environments. External downloads (tarballs, git repos) are standard operations. Natural language build instructions are preferred over raw shell scripts. Flag missing download URLs/versions but do not flag system-level operations as infeasible.
 
 **Severity Mapping:**
 - **Critical (≥4.0):** New external dependencies (APIs, services) with NO configuration guidance
