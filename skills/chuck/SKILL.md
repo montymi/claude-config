@@ -36,6 +36,7 @@ allowed-tools: [Read, Glob, Grep]
 
 **Implication for validation:** When assessing feasibility of prompt directives, account for Blitzy's Linux execution environment, multi-agent orchestration, and 8-12 hour reasoning window. Do not flag directives as infeasible when they require system-level operations (compilation, emulation, package installation) that Blitzy's environment supports.
 
+
 ## Arguments
 
 `$ARGUMENTS` contains the prompt text to validate. The entire prompt should be provided as input.
@@ -224,6 +225,7 @@ RATIONALE: [Explain why this is/isn't problematic for THIS project]
 **Reasoning:** Blitzy executes in isolated Linux environments with full toolchain access including cross-compilers, QEMU system emulation, and make/gcc toolchains. 8-12 hours of reasoning enables iterative compile-diagnose-fix cycles. Multi-agent orchestration can parallelize subsystem compilation. This is within Blitzy's operational capabilities.
 
 **Conclusion:** DO NOT FLAG — Blitzy's execution environment supports system-level operations including compilation, linking, and emulation.
+
 
 ---
 
