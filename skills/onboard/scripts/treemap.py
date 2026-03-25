@@ -8,7 +8,7 @@ and emits a structural map + prioritized code smell report.
 Requires: pip install tree-sitter tree-sitter-python tree-sitter-javascript
            tree-sitter-typescript tree-sitter-rust tree-sitter-go
            tree-sitter-java tree-sitter-ruby tree-sitter-c tree-sitter-cpp
-           tree-sitter-kotlin
+           tree-sitter-kotlin tree-sitter-php
 """
 
 import argparse
@@ -48,6 +48,7 @@ def _load_languages():
         "c": ("tree_sitter_c", "language"),
         "cpp": ("tree_sitter_cpp", "language"),
         "kotlin": ("tree_sitter_kotlin", "language"),
+        "php": ("tree_sitter_php", "language_php"),
     }
     for lang_name, (module_name, func_name) in loaders.items():
         try:
@@ -105,6 +106,7 @@ EXT_TO_LANG = {
     ".hpp": "cpp",
     ".kt": "kotlin",
     ".kts": "kotlin",
+    ".php": "php",
 }
 
 
@@ -186,6 +188,11 @@ LANG_NODE_TYPES = {
         "classes": ["class_declaration", "object_declaration"],
         "functions": ["function_declaration"],
         "imports": ["import_header"],
+    },
+    "php": {
+        "classes": ["class_declaration", "interface_declaration", "trait_declaration"],
+        "functions": ["function_definition", "method_declaration"],
+        "imports": ["namespace_use_declaration"],
     },
 }
 
@@ -657,11 +664,14 @@ class CodebaseMapper:
         }
 
     def _walk_tree(self, node, ctx: FileContext):
-        """Recursively walk the AST and dispatch to visitors."""
-        for visitor in self._visitors:
-            visitor.visit(node, ctx)
-        for child in node.children:
-            self._walk_tree(child, ctx)
+        """Iteratively walk the AST and dispatch to visitors."""
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            for visitor in self._visitors:
+                visitor.visit(current, ctx)
+            # Push children in reverse order so leftmost child is processed first
+            stack.extend(reversed(current.children))
 
     def detect_circular_imports(self):
         """Detect circular import cycles in the import graph."""
@@ -784,8 +794,23 @@ class CodebaseMapper:
         return []
 
     def detect_duplicate_logic(self):
-        """Detect functions with high token similarity (potential duplicates)."""
+        """Detect functions with high token similarity (potential duplicates).
+
+        Uses length-based pre-filtering and a comparison cap to stay fast on
+        large codebases (O(n²) SequenceMatcher is expensive).
+        """
+        MAX_FUNCTIONS = 2000  # Skip duplicate detection if too many functions
+        MAX_DUPLICATES = 50   # Stop after finding this many duplicates
+
         if len(self._function_bodies) < 2:
+            return
+        if len(self._function_bodies) > MAX_FUNCTIONS:
+            print(
+                f"Warning: {len(self._function_bodies)} functions found, "
+                f"skipping duplicate detection (cap: {MAX_FUNCTIONS}). "
+                f"Use --skip-smells DUPLICATE_LOGIC to silence.",
+                file=sys.stderr,
+            )
             return
 
         def normalize(source: str) -> str:
@@ -797,11 +822,23 @@ class CodebaseMapper:
             return "\n".join(lines)
 
         normalized = [(f, n, l, normalize(s)) for f, n, l, s in self._function_bodies]
+        # Sort by source length for efficient length-based pre-filtering
+        normalized.sort(key=lambda x: len(x[3]))
+        found = 0
 
         for i in range(len(normalized)):
+            if found >= MAX_DUPLICATES:
+                break
             file_a, name_a, line_a, src_a = normalized[i]
+            len_a = len(src_a)
+            if len_a < 40:  # Skip very short normalized sources
+                continue
             for j in range(i + 1, len(normalized)):
                 file_b, name_b, line_b, src_b = normalized[j]
+                len_b = len(src_b)
+                # Length pre-filter: if lengths differ by >40%, similarity can't exceed 0.8
+                if len_b > len_a * 1.4:
+                    break  # Sorted by length, so all remaining are longer
                 ratio = difflib.SequenceMatcher(None, src_a, src_b).ratio()
                 if ratio > 0.8:
                     self.smells.append({
@@ -811,6 +848,9 @@ class CodebaseMapper:
                         "line": line_a,
                         "detail": f"{name_a}() ~{ratio:.0%} similar to {name_b}() in {file_b}:{line_b}",
                     })
+                    found += 1
+                    if found >= MAX_DUPLICATES:
+                        break
 
     def format_output(self) -> str:
         """Format the structural map and smell report."""

@@ -93,6 +93,8 @@ class FileEntry:
     action: str  # CREATE or MODIFY
     purpose: str
     source_section: str = ""
+    source_file: str = ""  # content of "Source File" column if present
+    source_lines: int = 0  # extracted/enriched from source line counts
 
 
 @dataclass
@@ -127,6 +129,7 @@ class AAPDocument:
     dependencies: list[DependencyEntry] = field(default_factory=list)
     rules: list[RuleEntry] = field(default_factory=list)
     scope_items: list[ScopeItem] = field(default_factory=list)
+    source_line_map: dict[str, int] = field(default_factory=dict)  # source file → line count
     mermaid_diagrams: int = 0
     code_blocks: int = 0
     total_lines: int = 0
@@ -225,11 +228,14 @@ class TableVisitor(NodeVisitor):
             self._extract_dep_entries(node, header_lower, doc)
 
     def _is_file_table(self, headers: list[str]) -> bool:
-        # Explicit action column: File|Action|Purpose
-        if "file" in headers and "action" in headers:
+        # Check if any header contains "file" as a word (handles "Target File", "File Path", etc.)
+        has_file_col = any("file" in h for h in headers)
+        # Explicit action/transformation column
+        has_action_col = any(h in ("action", "transformation") for h in headers)
+        if has_file_col and has_action_col:
             return True
-        # Also match tables with "file path" column (action inferred from section heading)
-        file_cols = ("file", "file path", "file_path")
+        # Also match tables with just a file-like column (action inferred from section heading)
+        file_cols = ("file", "file path", "file_path", "target file")
         return any(h in file_cols for h in headers)
 
     def _is_dep_table(self, headers: list[str]) -> bool:
@@ -280,24 +286,57 @@ class TableVisitor(NodeVisitor):
                 return "REFERENCE"
         return ""
 
+    # Normalize transformation/action values to canonical actions
+    _ACTION_MAP = {
+        "CREATE": "CREATE",
+        "MODIFY": "MODIFY",
+        "UPDATE": "MODIFY",
+        "REFERENCE": "REFERENCE",
+        "DELETE": "DELETE",
+        "AUTO-GENERATED": "AUTO-GENERATED",
+    }
+
     def _extract_file_entries(self, table_node, headers, doc, source_lines):
         """Extract FileEntry objects from a file table."""
-        # Find the file path column (may be "file", "file path", etc.)
-        file_cols = ("file", "file path", "file_path")
+        # Find the file path column (may be "file", "file path", "target file", etc.)
+        file_cols = ("file", "file path", "file_path", "target file")
         file_idx = -1
         for col in file_cols:
             if col in headers:
                 file_idx = headers.index(col)
                 break
+        # Fallback: find any header containing "file"
+        if file_idx < 0:
+            for i, h in enumerate(headers):
+                if "file" in h:
+                    file_idx = i
+                    break
         if file_idx < 0:
             return
 
-        action_idx = headers.index("action") if "action" in headers else -1
+        # Look for action column (may be "action" or "transformation")
+        action_idx = -1
+        for col in ("action", "transformation"):
+            if col in headers:
+                action_idx = headers.index(col)
+                break
         # Match "purpose" or "modification purpose" or similar
         purpose_idx = -1
         for i, h in enumerate(headers):
             if "purpose" in h:
                 purpose_idx = i
+                break
+        # Find source file column (for extracting line counts from source file references)
+        source_file_idx = -1
+        for i, h in enumerate(headers):
+            if h in ("source file", "source file(s)", "source files"):
+                source_file_idx = i
+                break
+        # Also check "key changes" column for line count mentions
+        key_changes_idx = -1
+        for i, h in enumerate(headers):
+            if "key changes" in h or "changes" in h or "role" in h:
+                key_changes_idx = i
                 break
 
         # Find the section this table belongs to
@@ -317,10 +356,15 @@ class TableVisitor(NodeVisitor):
 
             path = cells[file_idx].strip()
             if action_idx >= 0 and len(cells) > action_idx:
-                action = cells[action_idx].strip().upper()
+                raw_action = cells[action_idx].strip().upper()
+                action = self._ACTION_MAP.get(raw_action, raw_action)
             else:
                 action = inferred_action
             purpose = cells[purpose_idx].strip() if purpose_idx >= 0 and len(cells) > purpose_idx else ""
+            source_file = cells[source_file_idx].strip() if source_file_idx >= 0 and len(cells) > source_file_idx else ""
+
+            # Extract source line count from any cell that mentions lines
+            src_lines = self._extract_line_count(cells, file_idx, source_file_idx, key_changes_idx)
 
             if path and action in ("CREATE", "MODIFY", "AUTO-GENERATED", "REFERENCE", "DELETE"):
                 doc.files.append(FileEntry(
@@ -328,7 +372,49 @@ class TableVisitor(NodeVisitor):
                     action=action,
                     purpose=purpose,
                     source_section=section,
+                    source_file=source_file,
+                    source_lines=src_lines,
                 ))
+
+    # Regex to find line counts like "6,274 lines", "9,210 lines", "(5,323 lines)", "6274"
+    _LINE_COUNT_RE = re.compile(r"([\d,]+)\s*lines?\b", re.IGNORECASE)
+    # Fallback: bare number in parens like "(6,274)" when near a .c filename
+    _BARE_COUNT_RE = re.compile(r"\((\d[\d,]*)\)")
+
+    def _extract_line_count(self, cells: list[str], file_idx: int,
+                            source_file_idx: int, key_changes_idx: int) -> int:
+        """Extract source line count from table cells.
+
+        Scans source file column, key changes column, and all other columns
+        for patterns like '9,210 lines' or '(6,274 lines)'.
+        """
+        # Priority order: source file column, key changes, then all cells
+        priority_indices = []
+        if source_file_idx >= 0:
+            priority_indices.append(source_file_idx)
+        if key_changes_idx >= 0:
+            priority_indices.append(key_changes_idx)
+        # Add remaining indices
+        for i in range(len(cells)):
+            if i not in priority_indices and i != file_idx:
+                priority_indices.append(i)
+
+        for idx in priority_indices:
+            if idx >= len(cells):
+                continue
+            cell = cells[idx]
+            # Try explicit "N lines" pattern first
+            match = self._LINE_COUNT_RE.search(cell)
+            if match:
+                return int(match.group(1).replace(",", ""))
+            # Try bare parenthesized number near a .c file reference
+            if ".c" in cell:
+                match = self._BARE_COUNT_RE.search(cell)
+                if match:
+                    val = int(match.group(1).replace(",", ""))
+                    if val > 50:  # filter out small numbers that aren't line counts
+                        return val
+        return 0
 
     def _extract_dep_entries(self, table_node, headers, doc):
         """Extract DependencyEntry objects from a dependency table."""
@@ -452,6 +538,97 @@ class RuleVisitor(NodeVisitor):
         return ""
 
 
+class SourceLineMapVisitor(NodeVisitor):
+    """Builds a source file → line count map from tables and code blocks.
+
+    Extracts from:
+    - Tables with 'Lines' or 'Lines (approx)' columns (e.g., complexity hotspot tables)
+    - Code block lines matching patterns like 'filename.c  (N,NNN lines — description)'
+    - Table cells containing 'N,NNN lines' alongside a .c/.h filename
+    """
+
+    # Match "filename.c" or "filename.h" with optional path prefix
+    _FILE_RE = re.compile(r"(?:^|[`/])([a-zA-Z_][\w.-]*\.[ch])\b")
+    # Match line counts: "6,274 lines", "9210 lines", bare "9,210" in parens
+    _LINES_RE = re.compile(r"([\d,]+)\s*lines?\b", re.IGNORECASE)
+    # Code block pattern: "├── filename.c  (6,274 lines — description)" or "crypto/ (327,616 lines — ...)"
+    _TREE_LINE_RE = re.compile(r"([a-zA-Z_][\w./-]*(?:\.[ch]|/))\s+\(([\d,]+)\s*lines?")
+    # Table with source file and bare number lines column
+    _BARE_NUM_RE = re.compile(r"^[\d,]+$")
+
+    def visit(self, node, doc: AAPDocument, source_lines: list[str]) -> None:
+        if node.type == "fenced_code_block":
+            self._extract_from_code_block(node, doc)
+        elif node.type == "pipe_table":
+            self._extract_from_table(node, doc)
+
+    def _extract_from_code_block(self, node, doc: AAPDocument) -> None:
+        """Extract line counts from tree-style code blocks."""
+        text = node.text.decode("utf-8")
+        for match in self._TREE_LINE_RE.finditer(text):
+            filename = match.group(1)
+            count = int(match.group(2).replace(",", ""))
+            if count > 50:  # filter noise
+                doc.source_line_map[filename] = max(doc.source_line_map.get(filename, 0), count)
+
+    def _extract_from_table(self, node, doc: AAPDocument) -> None:
+        """Extract line counts from tables with a 'Lines' column."""
+        # Get header cells
+        header_cells = []
+        for child in node.children:
+            if child.type == "pipe_table_header":
+                for cell in child.children:
+                    if cell.type == "pipe_table_cell":
+                        header_cells.append(cell.text.decode("utf-8").strip().lower())
+                break
+
+        if not header_cells:
+            return
+
+        # Find relevant columns
+        file_idx = -1
+        lines_idx = -1
+        for i, h in enumerate(header_cells):
+            if "file" in h or "source" in h:
+                file_idx = i
+            if h in ("lines", "lines (approx)") or "lines" in h:
+                lines_idx = i
+
+        if file_idx < 0 or lines_idx < 0:
+            return
+
+        for child in node.children:
+            if child.type != "pipe_table_row":
+                continue
+            cells = []
+            for cell in child.children:
+                if cell.type == "pipe_table_cell":
+                    cells.append(cell.text.decode("utf-8").strip().strip("`"))
+            if len(cells) <= max(file_idx, lines_idx):
+                continue
+
+            file_cell = cells[file_idx]
+            lines_cell = cells[lines_idx]
+
+            # Extract filename
+            file_match = self._FILE_RE.search(file_cell)
+            if not file_match:
+                continue
+            filename = file_match.group(1)
+
+            # Extract line count
+            lines_match = self._LINES_RE.search(lines_cell)
+            if lines_match:
+                count = int(lines_match.group(1).replace(",", ""))
+            elif self._BARE_NUM_RE.match(lines_cell.replace(",", "")):
+                count = int(lines_cell.replace(",", ""))
+            else:
+                continue
+
+            if count > 50:
+                doc.source_line_map[filename] = max(doc.source_line_map.get(filename, 0), count)
+
+
 class ScopeVisitor(NodeVisitor):
     """Extracts in-scope/out-of-scope items from 0.6-numbered sections."""
 
@@ -530,6 +707,7 @@ class AAPParser:
         self.config = config or AAPConfig()
         self._visitors = [
             HeadingVisitor(self.config),
+            SourceLineMapVisitor(self.config),
             TableVisitor(self.config),
             CodeBlockVisitor(self.config),
             RuleVisitor(self.config),
@@ -550,6 +728,9 @@ class AAPParser:
         tree = parser.parse(source.encode("utf-8"))
         self._walk_tree(tree.root_node, doc, source_lines)
 
+        # Enrich file entries with source line counts from the map
+        self._enrich_file_source_lines(doc)
+
         # Build heading hierarchy
         self._build_hierarchy(doc)
 
@@ -561,6 +742,73 @@ class AAPParser:
             visitor.visit(node, doc, source_lines)
         for child in node.children:
             self._walk_tree(child, doc, source_lines)
+
+    def _enrich_file_source_lines(self, doc: AAPDocument) -> None:
+        """Cross-reference file entries with the source line count map.
+
+        Two-pass approach:
+        1. Map each CREATE file to its referenced C source files
+        2. Split source line counts proportionally among all target files
+           that reference the same source (avoids double-counting)
+        """
+        if not doc.source_line_map:
+            return
+
+        _file_re = re.compile(r"([a-zA-Z_][\w.-]*\.[ch])")
+        _dir_re = re.compile(r"([a-zA-Z_][\w.-]*/)")
+        _source_exts = (".rs", ".c", ".cpp", ".cc", ".h", ".py", ".go", ".java", ".ts", ".js")
+
+        # Pass 1: Map each eligible file to its referenced source entries (files or dirs)
+        file_to_sources: dict[int, set[str]] = {}  # index → set of source keys
+        for i, f in enumerate(doc.files):
+            if f.source_lines > 0 or f.action != "CREATE":
+                continue
+            basename = f.path.rsplit("/", 1)[-1] if "/" in f.path else f.path
+            if not any(basename.endswith(ext) for ext in _source_exts):
+                continue
+
+            sources = set()
+            # Priority 1: source_file column (per-row)
+            # Priority 2: purpose text
+            # Priority 3: section heading (only for primary files)
+            for text, is_section in [
+                (f.source_file, False),
+                (f.purpose, False),
+                (f.source_section, True),
+            ]:
+                if not text:
+                    continue
+                # Check for file matches first
+                matches = _file_re.findall(text)
+                found = {m for m in matches if m in doc.source_line_map}
+                # Also check for directory matches
+                dir_matches = _dir_re.findall(text)
+                dir_found = {m for m in dir_matches if m in doc.source_line_map}
+                found.update(dir_found)
+
+                if found:
+                    if is_section and basename not in ("lib.rs", "main.rs", "mod.rs"):
+                        continue
+                    sources.update(found)
+                    break  # use highest priority match only
+
+            if sources:
+                file_to_sources[i] = sources
+
+        # Pass 2: Count how many target files reference each source file
+        source_ref_count: dict[str, int] = {}
+        for sources in file_to_sources.values():
+            for s in sources:
+                source_ref_count[s] = source_ref_count.get(s, 0) + 1
+
+        # Pass 3: Assign proportional line counts
+        for i, sources in file_to_sources.items():
+            total = 0
+            for s in sources:
+                # Split this source's lines among all targets that reference it
+                total += doc.source_line_map[s] // source_ref_count[s]
+            if total > 0:
+                doc.files[i].source_lines = total
 
     def _build_hierarchy(self, doc: AAPDocument) -> None:
         """Nest headings into parent-child relationships."""
@@ -598,12 +846,13 @@ class AAPParser:
             if line.strip().startswith("```") and not line.strip() == "```":
                 doc.code_blocks += 1
 
-        # Simple table extraction for file tables (with explicit action column)
-        table_re = re.compile(r"^\|\s*`?([^|`]+?)`?\s*\|\s*(CREATE|MODIFY|REFERENCE|DELETE)\s*\|\s*(.+?)\s*\|")
+        # Simple table extraction for file tables (with explicit action/transformation column)
+        table_re = re.compile(r"^\|\s*`?([^|`]+?)`?\s*\|\s*(CREATE|MODIFY|UPDATE|REFERENCE|DELETE)\s*\|\s*(.+?)\s*\|")
         for line in source_lines:
             m = table_re.match(line)
             if m:
-                doc.files.append(FileEntry(path=m.group(1).strip(), action=m.group(2), purpose=m.group(3).strip()))
+                action = {"UPDATE": "MODIFY"}.get(m.group(2), m.group(2))
+                doc.files.append(FileEntry(path=m.group(1).strip(), action=action, purpose=m.group(3).strip()))
 
         self._build_hierarchy(doc)
         return doc
@@ -700,8 +949,19 @@ class AAPParser:
             create_loc = sum(loc for f, loc in file_locs if f.action == "CREATE")
             modify_loc = sum(loc for f, loc in file_locs if f.action == "MODIFY")
 
-            lines.append(f"Estimated using per-file heuristics (extension + path context), "
-                         f"MODIFY baseline: **{self.config.loc_modify} LoC**")
+            # Count how many files had source line data vs heuristic
+            source_informed = sum(1 for f in doc.files if f.source_lines > 0 and f.action == "CREATE")
+            heuristic_only = doc.create_count - source_informed
+            total_source_lines = sum(f.source_lines for f in doc.files if f.source_lines > 0)
+
+            method_parts = []
+            if source_informed:
+                method_parts.append(f"{source_informed} files estimated from source line counts "
+                                    f"({total_source_lines:,} source lines × {self._RUST_EXPANSION_RATIO}x ratio)")
+            if heuristic_only:
+                method_parts.append(f"{heuristic_only} files estimated via extension heuristics")
+            method_parts.append(f"MODIFY baseline: {self.config.loc_modify} LoC")
+            lines.append("Estimation method: " + "; ".join(method_parts))
             lines.append("")
             lines.append("| Category | Files | Estimated LoC |")
             lines.append("|----------|-------|---------------|")
@@ -767,12 +1027,20 @@ class AAPParser:
         # C++ / TableGen headers
         ".h": 80,
         ".td": 120,
+        # Rust source
+        ".rs": 300,
         # Python source
         ".py": 200,
         # MLIR test files
         ".mlir": 80,
         # Build files
         "CMakeLists.txt": 25,
+        # Shell scripts
+        ".sh": 150,
+        # HTML
+        ".html": 200,
+        # Markdown reports
+        ".md": 100,
         # Config / metadata
         ".json": 30,
         ".toml": 20,
@@ -799,12 +1067,24 @@ class AAPParser:
         ("tests/", 1.3),
     ]
 
+    # C-to-Rust expansion ratio: Rust rewrites are typically 1.0–1.3x the C source
+    # due to explicit error handling, type annotations, and pattern matching
+    _RUST_EXPANSION_RATIO = 1.1
+
     def _estimate_file_loc(self, f: FileEntry) -> int:
-        """Estimate LoC for a single file based on extension and path context."""
+        """Estimate LoC for a single file based on source line counts, extension, and path context.
+
+        If the AAP table includes source line counts (e.g., '9,210 lines'), use those
+        scaled by a language expansion ratio. Otherwise fall back to extension heuristics.
+        """
         if f.action == "MODIFY":
             return self.config.loc_modify
         if f.action in ("REFERENCE", "DELETE"):
             return 0
+
+        # If we have source line counts from the AAP, use them
+        if f.source_lines > 0:
+            return max(int(f.source_lines * self._RUST_EXPANSION_RATIO), 10)
 
         path = f.path
         basename = path.rsplit("/", 1)[-1] if "/" in path else path
@@ -870,9 +1150,9 @@ class AAPParser:
             ("CLI / Tools", [
                 "bin/",
             ]),
-            # Rust layout
+            # Rust layout (crate directories and src/)
             ("Rust Source", [
-                "src/",
+                "exim-", "openssl-", "src/main.rs", "src/lib.rs", "src/",
             ]),
             # Build system
             ("Build System", [
@@ -882,6 +1162,10 @@ class AAPParser:
             # CI/CD
             ("CI/CD", [
                 ".github/", ".gitlab-ci", "Jenkinsfile",
+            ]),
+            # Benchmarking
+            ("Benchmarking", [
+                "bench/",
             ]),
             # Documentation
             ("Documentation", [
